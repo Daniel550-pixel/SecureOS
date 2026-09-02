@@ -1,0 +1,6 @@
+{
+  "name": "Digital Integrity Monitor",
+  "description": "Architectural prototype for digital integrity and trust monitoring with deterministic scoring, baseline comparison, telemetry normalization, and AI-assisted security reasoning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
