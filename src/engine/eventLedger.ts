@@ -23,24 +23,31 @@ const GENESIS_HASH = '0'.repeat(64);
 
 function ensureLedger(): void {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  if (!existsSync(LEDGER_PATH)) {
-    appendFileSync(LEDGER_PATH, '', 'utf8');
-  }
+  if (!existsSync(LEDGER_PATH)) appendFileSync(LEDGER_PATH, '', 'utf8');
 }
 
 function readRecords(): LedgerRecord[] {
   ensureLedger();
   const raw = readFileSync(LEDGER_PATH, 'utf8').trim();
   if (!raw) return [];
-  return raw.split('\n').filter(Boolean).map(line => JSON.parse(line) as LedgerRecord);
+  return raw.split('\n').filter(Boolean).map((line, index) => {
+    try {
+      return JSON.parse(line) as LedgerRecord;
+    } catch {
+      throw new Error(`Ledger corruption: invalid JSON at line ${index + 1}`);
+    }
+  });
 }
 
 function canonicalize(value: unknown): string {
-  return JSON.stringify(value, Object.keys(value as object).sort());
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object).sort().map(key => `${JSON.stringify(key)}:${canonicalize(object[key])}`).join(',')}}`;
 }
 
 function hashRecord(record: Omit<LedgerRecord, 'record_hash'>): string {
-  return createHash('sha256').update(canonicalize(record)).digest('hex');
+  return createHash('sha256').update(canonicalize(record), 'utf8').digest('hex');
 }
 
 export function appendLedgerRecord(input: Omit<LedgerRecord, 'sequence' | 'recorded_at' | 'previous_hash' | 'record_hash'>): LedgerRecord {
@@ -74,18 +81,23 @@ export function getLedger(limit = 100): LedgerRecord[] {
 }
 
 export function verifyLedger(): { valid: boolean; records: number; first_invalid_sequence?: number; error?: string } {
-  const records = readRecords();
-  let previousHash = GENESIS_HASH;
-  for (const record of records) {
-    const { record_hash, ...unsigned } = record;
-    if (record.previous_hash !== previousHash || hashRecord(unsigned) !== record_hash) {
-      return { valid: false, records: records.length, first_invalid_sequence: record.sequence, error: 'Hash-chain verification failed' };
+  try {
+    const records = readRecords();
+    let previousHash = GENESIS_HASH;
+    for (const record of records) {
+      const { record_hash, ...unsigned } = record;
+      if (record.sequence < 1 || record.previous_hash !== previousHash || hashRecord(unsigned) !== record_hash) {
+        return { valid: false, records: records.length, first_invalid_sequence: record.sequence, error: 'Hash-chain verification failed' };
+      }
+      previousHash = record_hash;
     }
-    previousHash = record_hash;
+    return { valid: true, records: records.length };
+  } catch (error) {
+    return { valid: false, records: 0, error: error instanceof Error ? error.message : 'Ledger verification failed' };
   }
-  return { valid: true, records: records.length };
 }
 
+/** Returns a logical ledger identifier; filesystem paths are never exposed through the API. */
 export function getLedgerPath(): string {
-  return LEDGER_PATH;
+  return 'data/event-ledger.jsonl';
 }
