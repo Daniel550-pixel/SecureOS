@@ -1,21 +1,66 @@
 @import "tailwindcss";
 
-@layer base {
-  body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    background-color: #030712;
-    color: #f1f5f9;
-  }
-
-  code, pre, .font-mono {
-    font-family: 'Fira Code', ui-monospace, monospace;
-  }
+:root {
+  color-scheme: dark;
+  --secure-bg: #03070d;
+  --secure-panel: rgba(8, 15, 27, 0.82);
+  --secure-panel-strong: rgba(5, 11, 20, 0.96);
+  --secure-line: rgba(148, 163, 184, 0.10);
+  --secure-cyan: #38d9ff;
+  --secure-cyan-soft: rgba(56, 217, 255, 0.14);
 }
 
-/* SecureOS Grid & Background Textures */
+@layer base {
+  * { box-sizing: border-box; }
+  html { background: var(--secure-bg); }
+  body {
+    margin: 0;
+    min-width: 320px;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--secure-bg);
+    color: #f1f5f9;
+    text-rendering: optimizeLegibility;
+  }
+  button, select, input, textarea { font: inherit; }
+  code, pre, .font-mono { font-family: 'Fira Code', 'SFMono-Regular', Consolas, monospace; }
+}
+
+.secure-shell {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(8, 145, 178, 0.14), transparent 28rem),
+    radial-gradient(circle at 12% 22%, rgba(37, 99, 235, 0.07), transparent 24rem),
+    linear-gradient(180deg, #03070d 0%, #040913 45%, #02060b 100%);
+}
+
+.secure-shell::before,
+.secure-shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.secure-shell::before {
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.025) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(to bottom, black, transparent 88%);
+}
+
+.secure-shell::after {
+  background: linear-gradient(90deg, transparent, rgba(56, 217, 255, 0.03), transparent);
+  width: 38vw;
+  transform: skewX(-12deg) translateX(-55vw);
+  animation: secureSweep 14s ease-in-out infinite;
+}
+
 .bg-secure-grid {
   background-size: 32px 32px;
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(14, 165, 233, 0.04) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(14, 165, 233, 0.04) 1px, transparent 1px);
 }
@@ -25,67 +70,144 @@
   background-image: radial-gradient(rgba(14, 165, 233, 0.12) 1px, transparent 0);
 }
 
-/* Metallic & Glass Panel Treatment */
 .secure-panel {
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(3, 7, 18, 0.9) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.12);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  position: relative;
+  background:
+    linear-gradient(145deg, rgba(15, 23, 42, 0.86), rgba(3, 8, 18, 0.94)),
+    var(--secure-panel);
+  border: 1px solid var(--secure-line);
+  box-shadow:
+    0 22px 70px rgba(0, 0, 0, 0.38),
+    inset 0 1px rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(20px);
+}
+
+.secure-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(145deg, rgba(56, 217, 255, 0.13), transparent 30%, transparent 72%, rgba(96, 165, 250, 0.08));
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 .secure-panel-glow {
-  box-shadow: 0 0 35px -5px rgba(6, 182, 212, 0.15), 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+  box-shadow:
+    0 0 60px rgba(6, 182, 212, 0.07),
+    0 25px 80px rgba(0, 0, 0, 0.45),
+    inset 0 1px rgba(255, 255, 255, 0.04);
 }
 
-/* High-tech Orbit & Core Animations */
-@keyframes spinSlow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.secure-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0.15rem 0;
 }
 
-@keyframes spinSlowReverse {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
+.secure-section-heading h2 {
+  margin: 0.2rem 0 0;
+  font-size: clamp(1.25rem, 2vw, 1.8rem);
+  line-height: 1.1;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  color: #f8fafc;
 }
 
-@keyframes pulseGlow {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.04); }
+.secure-kicker {
+  margin: 0;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #67e8f9;
+  text-transform: uppercase;
 }
 
-@keyframes radarSweep {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+.secure-authority-chip {
+  border: 1px solid rgba(56, 217, 255, 0.15);
+  background: rgba(8, 145, 178, 0.07);
+  color: #a5f3fc;
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font: 600 0.61rem/1 'Fira Code', monospace;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
-.animate-spin-slow {
-  animation: spinSlow 30s linear infinite;
+.secure-toast {
+  position: sticky;
+  top: 7.5rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid rgba(56, 217, 255, 0.18);
+  border-radius: 0.9rem;
+  padding: 0.8rem 1rem;
+  background: rgba(5, 15, 26, 0.92);
+  box-shadow: 0 18px 50px rgba(0,0,0,.35);
+  backdrop-filter: blur(18px);
+  color: #cffafe;
+  font: 600 0.72rem/1.3 'Fira Code', monospace;
 }
 
-.animate-spin-reverse-slow {
-  animation: spinSlowReverse 45s linear infinite;
+.secure-toast.error { border-color: rgba(244, 63, 94, .28); color: #fecdd3; }
+.secure-toast.info { border-color: rgba(168, 85, 247, .26); color: #e9d5ff; }
+.secure-toast button { color: #64748b; text-transform: uppercase; font-size: .62rem; cursor: pointer; }
+.secure-toast button:hover { color: #e2e8f0; }
+
+.secure-boot-card {
+  width: min(92vw, 520px);
+  padding: 2.5rem;
+  text-align: center;
+  border: 1px solid rgba(56, 217, 255, .12);
+  border-radius: 1.5rem;
+  background: rgba(4, 11, 20, .72);
+  box-shadow: 0 30px 100px rgba(0,0,0,.55), inset 0 1px rgba(255,255,255,.04);
+  backdrop-filter: blur(24px);
 }
 
-.animate-pulse-glow {
-  animation: pulseGlow 4s ease-in-out infinite;
+.secure-boot-card h1 { margin: .7rem 0 .4rem; font-size: clamp(1.7rem, 5vw, 2.5rem); letter-spacing: -.05em; }
+.secure-boot-card > p:last-child { margin: 0 auto; max-width: 380px; color: #64748b; font-size: .86rem; line-height: 1.6; }
+.secure-boot-orbit {
+  width: 66px;
+  height: 66px;
+  margin: 0 auto 1.4rem;
+  border: 1px solid rgba(56, 217, 255, .16);
+  border-top-color: #38d9ff;
+  border-radius: 50%;
+  box-shadow: inset 0 0 24px rgba(56,217,255,.08), 0 0 30px rgba(56,217,255,.08);
+  animation: spinSlow 2.8s linear infinite;
 }
 
-.animate-radar {
-  animation: radarSweep 8s linear infinite;
+@keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes spinSlowReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+@keyframes pulseGlow { 0%, 100% { opacity: .42; transform: scale(1); } 50% { opacity: .9; transform: scale(1.035); } }
+@keyframes radarSweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes secureSweep { 0%, 72%, 100% { transform: skewX(-12deg) translateX(-55vw); opacity: 0; } 78% { opacity: 1; } 90% { transform: skewX(-12deg) translateX(170vw); opacity: 0; } }
+
+.animate-spin-slow { animation: spinSlow 30s linear infinite; }
+.animate-spin-reverse-slow { animation: spinSlowReverse 45s linear infinite; }
+.animate-pulse-glow { animation: pulseGlow 4s ease-in-out infinite; }
+.animate-radar { animation: radarSweep 8s linear infinite; }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: rgba(3, 7, 18, 0.8); }
+::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.23); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.45); }
+
+@media (max-width: 640px) {
+  .secure-section-heading { align-items: flex-start; flex-direction: column; }
+  .secure-authority-chip { white-space: normal; line-height: 1.35; }
+  .secure-toast { top: 9rem; }
 }
 
-/* Custom technical scrollbar */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 }
-::-webkit-scrollbar-track {
-  background: rgba(3, 7, 18, 0.8);
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(56, 189, 248, 0.25);
-  border-radius: 2px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(56, 189, 248, 0.5);
-}
-
