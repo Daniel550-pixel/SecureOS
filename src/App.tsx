@@ -13,7 +13,28 @@ import { ModulePipelineOverview } from './components/ModulePipelineOverview';
 import { PowerShellAgentModal } from './components/PowerShellAgentModal';
 import { ArchitectureModal } from './components/ArchitectureModal';
 import { SystemState, SystemBaseline, IntegrityDeviation, TrustScoreResult, AIIntegrityAnalysis } from './types/integrity';
-import { CheckCircle2, AlertCircle, Shield, BrainCircuit, Activity, Lock, Layers } from 'lucide-react';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
+
+type ApiStateEnvelope = {
+  state?: SystemState;
+  baseline?: SystemBaseline;
+  deviations?: IntegrityDeviation[];
+  trustScore?: TrustScoreResult;
+  trust_score?: TrustScoreResult;
+  aiAnalysis?: AIIntegrityAnalysis;
+  ai_analysis?: AIIntegrityAnalysis;
+  analysis?: AIIntegrityAnalysis;
+  scenario_id?: string;
+};
+
+const normalizeEnvelope = (data: ApiStateEnvelope) => ({
+  state: data.state ?? null,
+  baseline: data.baseline ?? null,
+  deviations: data.deviations ?? [],
+  trustScore: data.trustScore ?? data.trust_score ?? null,
+  aiAnalysis: data.aiAnalysis ?? data.ai_analysis ?? data.analysis ?? null,
+  scenarioId: data.scenario_id
+});
 
 export default function App() {
   const [state, setState] = useState<SystemState | null>(null);
@@ -21,69 +42,64 @@ export default function App() {
   const [deviations, setDeviations] = useState<IntegrityDeviation[]>([]);
   const [trustScore, setTrustScore] = useState<TrustScoreResult | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<AIIntegrityAnalysis | null>(null);
-
   const [currentScenarioId, setCurrentScenarioId] = useState<string>('supply_chain_tamper');
   const [activeTab, setActiveTab] = useState<SecureOsTab>('overview');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isAiAnalyzing, setIsAiAnalyzing] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
+  const [isArchitectureModalOpen, setIsArchitectureModalOpen] = useState(false);
 
-  const [isAgentModalOpen, setIsAgentModalOpen] = useState<boolean>(false);
-  const [isArchitectureModalOpen, setIsArchitectureModalOpen] = useState<boolean>(false);
-
-  const showToast = (text: string, type: 'success' | 'info' | 'error' = 'success') => {
+  const showToast = useCallback((text: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToastMessage({ text, type });
-    setTimeout(() => setToastMessage(null), 4000);
-  };
+    window.setTimeout(() => setToastMessage(null), 4000);
+  }, []);
 
-  // 1. Fetch live system state from backend API
+  const applyEnvelope = useCallback((payload: ApiStateEnvelope) => {
+    const normalized = normalizeEnvelope(payload);
+    if (normalized.state) setState(normalized.state);
+    if (normalized.baseline) setBaseline(normalized.baseline);
+    setDeviations(normalized.deviations);
+    if (normalized.trustScore) setTrustScore(normalized.trustScore);
+    setAiAnalysis(normalized.aiAnalysis);
+    if (normalized.scenarioId) setCurrentScenarioId(normalized.scenarioId);
+  }, []);
+
   const fetchState = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch('/api/state');
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
-      setState(data.state);
-      setBaseline(data.baseline);
-      setDeviations(data.deviations);
-      setTrustScore(data.trustScore);
-      setAiAnalysis(data.aiAnalysis);
-    } catch (err: any) {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      applyEnvelope(await res.json());
+    } catch (err) {
       console.error('Failed to fetch state:', err);
-      showToast('Error syncing with backend API', 'error');
+      showToast('SecureOS core sync failed', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applyEnvelope, showToast]);
 
-  // Initial load
   useEffect(() => {
     fetchState();
   }, [fetchState]);
 
-  // 2. Scenario Switcher
   const handleSelectScenario = async (scenarioId: string) => {
     setIsLoading(true);
     try {
       const res = await fetch(`/api/scenario/${scenarioId}`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to set scenario');
       const data = await res.json();
-      setState(data.state);
-      setBaseline(data.baseline);
-      setDeviations(data.deviations);
-      setTrustScore(data.trustScore);
-      setAiAnalysis(data.aiAnalysis);
+      applyEnvelope(data);
       setCurrentScenarioId(scenarioId);
-      showToast(`Activated Scenario: ${data.scenario.name}`);
-    } catch (err: any) {
+      showToast(`Scenario activated: ${data.scenario?.name ?? scenarioId}`);
+    } catch (err) {
       console.error('Scenario error:', err);
-      showToast('Failed to switch scenario', 'error');
+      showToast('Scenario activation failed', 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 3. Trigger Gemini AI Security Reasoning
   const handleTriggerAiAnalysis = async (customQuery?: string) => {
     setIsAiAnalyzing(true);
     try {
@@ -94,41 +110,35 @@ export default function App() {
       });
       if (!res.ok) throw new Error('AI analysis failed');
       const data = await res.json();
-      setAiAnalysis(data.analysis);
+      setAiAnalysis(data.analysis ?? data.aiAnalysis ?? data.ai_analysis ?? null);
       setActiveTab('intelligence');
-      showToast('Gemini Security Reasoning synthesized', 'info');
+      showToast('AI reasoning synthesized over deterministic evidence', 'info');
     } catch (err: any) {
       console.error('AI analysis error:', err);
-      showToast('Gemini analysis failed: ' + (err.message || 'unknown error'), 'error');
+      showToast(`AI analysis failed: ${err?.message ?? 'unknown error'}`, 'error');
     } finally {
       setIsAiAnalyzing(false);
     }
   };
 
-  // 4. Execute Containment / Remediation Action
   const handleExecuteRemediation = async (actionType: string, targetEntity: string) => {
     try {
       const res = await fetch('/api/actions/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action_type: actionType, target_entity: targetEntity })
+        body: JSON.stringify({ action_type: actionType.toLowerCase(), target_entity: targetEntity })
       });
       if (!res.ok) throw new Error('Remediation action failed');
       const data = await res.json();
-      setState(data.state);
-      setBaseline(data.baseline);
-      setDeviations(data.deviations);
-      setTrustScore(data.trustScore);
-      setAiAnalysis(data.aiAnalysis);
-      showToast(`Remediation executed: ${data.action.name}`);
-    } catch (err: any) {
+      applyEnvelope(data);
+      showToast(`Remediation executed: ${data.action?.name ?? actionType}`);
+    } catch (err) {
       console.error('Remediation error:', err);
-      showToast('Failed to execute remediation', 'error');
+      showToast('Remediation execution failed', 'error');
     }
   };
 
-  // 5. Inject Telemetry Event
-  const handleInjectTelemetry = async (payload: any) => {
+  const handleInjectTelemetry = async (payload: unknown) => {
     try {
       const res = await fetch('/api/telemetry/ingest', {
         method: 'POST',
@@ -136,40 +146,29 @@ export default function App() {
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error('Ingestion failed');
-      const data = await res.json();
-      setState(data.state);
-      setBaseline(data.baseline);
-      setDeviations(data.deviations);
-      setTrustScore(data.trustScore);
-      setAiAnalysis(data.aiAnalysis);
-      showToast('Injected event successfully normalized into state');
-    } catch (err: any) {
+      applyEnvelope(await res.json());
+      showToast('Telemetry normalized into active security state');
+    } catch (err) {
       console.error('Ingestion error:', err);
-      showToast('Failed to ingest event', 'error');
+      showToast('Telemetry ingestion failed', 'error');
     }
   };
 
   if (!state || !trustScore || !baseline) {
     return (
-      <div className="min-h-screen bg-[#030712] flex flex-col items-center justify-center p-4 bg-secure-grid">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="w-14 h-14 rounded-full border-2 border-cyan-500/30 border-t-cyan-400 animate-spin" />
-          <div className="text-center font-mono">
-            <p className="text-sm font-bold text-slate-200 uppercase tracking-widest flex items-center gap-2 justify-center">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-              <span>SECUREOS • DIGITAL INTEGRITY ARBITER</span>
-            </p>
-            <p className="text-xs text-slate-400 mt-1">Bootstrapping Deterministic Trust Core & Telemetry Pipeline...</p>
-          </div>
+      <div className="secure-shell min-h-screen flex items-center justify-center p-4">
+        <div className="secure-boot-card">
+          <div className="secure-boot-orbit" />
+          <p className="secure-kicker">SECUREOS // DIGITAL INTEGRITY ARBITER</p>
+          <h1>Establishing ground truth.</h1>
+          <p>Synchronizing deterministic trust core, baseline state and telemetry pipeline.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#030712] text-slate-100 flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200 bg-secure-grid">
-      
-      {/* 1. SecureOS Command Header */}
+    <div className="secure-shell min-h-screen text-slate-100 flex flex-col selection:bg-cyan-500/30 selection:text-cyan-100">
       <Header
         currentScenarioId={currentScenarioId}
         onSelectScenario={handleSelectScenario}
@@ -182,181 +181,62 @@ export default function App() {
         onRefresh={fetchState}
       />
 
-      {/* Main Operating Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        
-        {/* Toast Alert Notification */}
+      <main className="relative z-10 flex-1 max-w-[1500px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {toastMessage && (
-          <div className={`p-3.5 rounded-xl border font-mono text-xs flex items-center justify-between shadow-xl transition-all animate-fade-in ${
-            toastMessage.type === 'error'
-              ? 'bg-rose-950/90 border-rose-800 text-rose-200'
-              : toastMessage.type === 'info'
-              ? 'bg-purple-950/90 border-purple-800 text-purple-200'
-              : 'bg-cyan-950/90 border-cyan-800 text-cyan-200'
-          }`}>
+          <div className={`secure-toast ${toastMessage.type}`}>
             <div className="flex items-center gap-2">
-              {toastMessage.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 text-rose-400" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-              )}
+              {toastMessage.type === 'error' ? <AlertCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
               <span>{toastMessage.text}</span>
             </div>
-            <button
-              onClick={() => setToastMessage(null)}
-              className="text-[10px] text-slate-400 hover:text-slate-200 uppercase ml-3 cursor-pointer"
-            >
-              Dismiss
-            </button>
+            <button onClick={() => setToastMessage(null)}>Dismiss</button>
           </div>
         )}
 
-        {/* View Router */}
-
-        {/* VIEW 1: COMMAND CENTER (Primary Digital Integrity Operating Environment) */}
         {activeTab === 'overview' && (
           <div className="space-y-6 animate-in fade-in duration-300">
-            {/* The 3D Radial Trust Core Centerpiece */}
-            <TrustCore
-              trustScore={trustScore}
-              deviations={deviations}
-              state={state}
-              onTriggerAiAnalysis={() => handleTriggerAiAnalysis()}
-              onOpenAudit={() => setActiveTab('audit')}
-              onRevertBaseline={() => handleSelectScenario('clean_baseline')}
-              isAiAnalyzing={isAiAnalyzing}
-            />
-
-            {/* Subsystem Metric Live Summary Cards */}
-            <LiveSecurityStateGrid
-              state={state}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-
-            {/* Time Degradation Chronological Attack Curve */}
-            <IntegrityTimeline currentScore={trustScore.current_score} />
-
-            {/* Interactive Security Topology Graph Preview */}
-            <SecurityTopology state={state} />
-
-            {/* 6-Module Architectural Pipeline */}
-            <ModulePipelineOverview
-              state={state}
-              deviations={deviations}
-              trustScore={trustScore}
-              aiAnalysis={aiAnalysis}
-              activeModuleTab="ai"
-              onSelectModuleTab={(tab) => {
-                if (tab === 'ai') setActiveTab('intelligence');
-                else if (tab === 'integrity') setActiveTab('integrity');
-                else if (tab === 'trust') setActiveTab('audit');
-                else if (tab === 'telemetry') setActiveTab('telemetry');
-                else if (tab === 'simulation') setActiveTab('simulation');
-              }}
-            />
-          </div>
-        )}
-
-        {/* VIEW 2: DEDICATED AI INTELLIGENCE WORKSTATION */}
-        {activeTab === 'intelligence' && (
-          <div className="animate-in fade-in duration-300">
-            <IntelligenceWorkstation
-              analysis={aiAnalysis}
-              trustScore={trustScore}
-              deviations={deviations}
-              state={state}
-              isLoading={isAiAnalyzing}
-              onRefreshAnalysis={() => handleTriggerAiAnalysis()}
-              onExecuteRemediation={(cmd) => {
-                showToast(`Executing remediation command: ${cmd}`);
-                if (cmd.includes('Restart-Service') || cmd.includes('WinDefend')) {
-                  handleExecuteRemediation('START_SERVICE', 'WinDefend');
-                } else if (cmd.includes('Stop-Process') || cmd.includes('win_updater.exe')) {
-                  handleExecuteRemediation('TERMINATE_PROCESS', 'win_updater.exe');
-                } else {
-                  handleSelectScenario('clean_baseline');
-                }
-              }}
-              onCustomPrompt={(prompt) => handleTriggerAiAnalysis(prompt)}
-            />
-          </div>
-        )}
-
-        {/* VIEW 3: INTERACTIVE TOPOLOGY GRAPH */}
-        {activeTab === 'topology' && (
-          <div className="animate-in fade-in duration-300 space-y-6">
-            <SecurityTopology state={state} />
+            <section className="secure-section-heading">
+              <div>
+                <p className="secure-kicker">COMMAND CENTER / LIVE NODE</p>
+                <h2>Digital integrity state</h2>
+              </div>
+              <div className="secure-authority-chip">DETERMINISTIC AUTHORITY · AI READ-ONLY</div>
+            </section>
+            <TrustCore trustScore={trustScore} deviations={deviations} state={state} onTriggerAiAnalysis={() => handleTriggerAiAnalysis()} onOpenAudit={() => setActiveTab('audit')} onRevertBaseline={() => handleSelectScenario('clean_baseline')} isAiAnalyzing={isAiAnalyzing} />
             <LiveSecurityStateGrid state={state} onNavigateTab={setActiveTab} />
+            <IntegrityTimeline currentScore={trustScore.current_score} />
+            <SecurityTopology state={state} />
+            <ModulePipelineOverview state={state} deviations={deviations} trustScore={trustScore} aiAnalysis={aiAnalysis} activeModuleTab="ai" onSelectModuleTab={(tab) => {
+              if (tab === 'ai') setActiveTab('intelligence');
+              else if (tab === 'integrity') setActiveTab('integrity');
+              else if (tab === 'trust') setActiveTab('audit');
+              else if (tab === 'telemetry') setActiveTab('telemetry');
+              else if (tab === 'simulation') setActiveTab('simulation');
+            }} />
           </div>
         )}
 
-        {/* VIEW 4: BASELINE DIFF MATRIX */}
-        {activeTab === 'integrity' && (
-          <div className="animate-in fade-in duration-300">
-            <IntegrityDiffMatrix
-              state={state}
-              baseline={baseline}
-              deviations={deviations}
-              onRemediateEntity={handleExecuteRemediation}
-            />
-          </div>
-        )}
+        {activeTab === 'intelligence' && <IntelligenceWorkstation analysis={aiAnalysis} trustScore={trustScore} deviations={deviations} state={state} isLoading={isAiAnalyzing} onRefreshAnalysis={() => handleTriggerAiAnalysis()} onExecuteRemediation={(cmd) => {
+          if (cmd.includes('Restart-Service') || cmd.includes('WinDefend')) handleExecuteRemediation('restart_service', 'WinDefend');
+          else if (cmd.includes('Stop-Process') || cmd.includes('win_updater.exe')) handleExecuteRemediation('terminate_process', 'win_updater.exe');
+          else handleExecuteRemediation('revert_baseline', 'host');
+        }} onCustomPrompt={(prompt) => handleTriggerAiAnalysis(prompt)} />}
 
-        {/* VIEW 5: TELEMETRY NORMALIZATION STREAM */}
-        {activeTab === 'telemetry' && (
-          <div className="animate-in fade-in duration-300">
-            <TelemetryStream events={state.recent_events} />
-          </div>
-        )}
-
-        {/* VIEW 6: DETERMINISTIC MATHEMATICAL PROOF & AUDIT */}
-        {activeTab === 'audit' && (
-          <div className="animate-in fade-in duration-300 space-y-6">
-            <TrustScoreAuditTable trustScore={trustScore} />
-          </div>
-        )}
-
-        {/* VIEW 7: SCENARIO LAB & INGESTION DECK */}
-        {activeTab === 'simulation' && (
-          <div className="animate-in fade-in duration-300">
-            <ScenarioSimulator
-              currentScenarioId={currentScenarioId}
-              onSelectScenario={handleSelectScenario}
-              onInjectEvent={handleInjectTelemetry}
-              isLoading={isLoading}
-            />
-          </div>
-        )}
-
+        {activeTab === 'topology' && <div className="space-y-6"><SecurityTopology state={state} /><LiveSecurityStateGrid state={state} onNavigateTab={setActiveTab} /></div>}
+        {activeTab === 'integrity' && <IntegrityDiffMatrix state={state} baseline={baseline} deviations={deviations} onRemediateEntity={handleExecuteRemediation} />}
+        {activeTab === 'telemetry' && <TelemetryStream events={state.recent_events} />}
+        {activeTab === 'audit' && <TrustScoreAuditTable trustScore={trustScore} />}
+        {activeTab === 'simulation' && <ScenarioSimulator currentScenarioId={currentScenarioId} onSelectScenario={handleSelectScenario} onInjectEvent={handleInjectTelemetry} isLoading={isLoading} />}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-cyan-500/10 bg-slate-950/90 py-6 px-4 mt-12 text-xs text-slate-500 font-mono">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400" />
-            <span className="font-bold text-slate-300">SECUREOS</span>
-            <span className="text-slate-700">|</span>
-            <span className="text-slate-400">Deterministic Digital Integrity Arbiter</span>
-          </div>
-          <div className="text-slate-500 text-[11px]">
-            Sovereign UAE Specification • AI Reasoning upon Verified Ground-Truth
-          </div>
+      <footer className="relative z-10 border-t border-white/[0.06] bg-[#03070d]/80 py-5 px-4 mt-12 text-[11px] text-slate-500 font-mono backdrop-blur-xl">
+        <div className="max-w-[1500px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <span><strong className="text-slate-300">SECUREOS</strong> / Deterministic Digital Integrity Arbiter</span>
+          <span>SIMULATION FIXTURES ARE NOT CRYPTOGRAPHIC PROOF · TRUST CORE v2.4</span>
         </div>
       </footer>
 
-      {/* PowerShell Collector Agent Modal */}
-      <PowerShellAgentModal
-        isOpen={isAgentModalOpen}
-        onClose={() => setIsAgentModalOpen(false)}
-      />
-
-      {/* GitHub Architecture Blueprint Modal */}
-      <ArchitectureModal
-        isOpen={isArchitectureModalOpen}
-        onClose={() => setIsArchitectureModalOpen(false)}
-      />
-
+      <PowerShellAgentModal isOpen={isAgentModalOpen} onClose={() => setIsAgentModalOpen(false)} />
+      <ArchitectureModal isOpen={isArchitectureModalOpen} onClose={() => setIsArchitectureModalOpen(false)} />
     </div>
   );
 }
