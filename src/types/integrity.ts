@@ -168,31 +168,60 @@ export interface TrustScoreResult {
   formula_version: string;
 }
 
-export interface AICorrelatedAttack {
-  tactic: string;
-  technique: string;
+export interface AICorrelatedEvent {
+  event_id?: string;
+  stage: string;
+  title: string;
   description: string;
   involved_entities: string[];
+  mitre_tactic?: string;
+  mitre_technique?: string;
   threat_likelihood: 'low' | 'moderate' | 'high' | 'critical';
+  evidence?: string;
 }
+
+export type AICorrelatedAttack = AICorrelatedEvent;
 
 export interface AIRecommendedAction {
   id: string;
   title: string;
+  action?: string;
   type: 'containment' | 'investigation' | 'remediation' | 'hardening';
   priority: 'urgent' | 'high' | 'medium' | 'low';
+  urgency?: 'IMMEDIATE' | 'HIGH' | 'MEDIUM' | 'LOW';
   command_snippet?: string;
+  command?: string;
   explanation: string;
+  rationale?: string;
 }
 
 export interface AIIntegrityAnalysis {
-  assessment: 'healthy' | 'elevated_risk' | 'high_risk' | 'critical_compromise';
-  summary_headline: string;
-  detailed_explanation: string;
-  confidence: number;
-  correlated_chain: AICorrelatedAttack[];
-  attack_narrative: string;
+  assessment: string;
+  risk_level?: 'CRITICAL' | 'HIGH' | 'ELEVATED' | 'LOW';
+  explanation: string;
+  detailed_explanation?: string;
+  summary_headline?: string;
+  threat_hypothesis?: string;
+  attack_narrative?: string;
+  correlated_events: AICorrelatedEvent[];
+  correlated_chain?: AICorrelatedEvent[];
+  correlated_activity_chain?: AICorrelatedEvent[];
+  mitre_mappings?: {
+    technique_id: string;
+    tactic: string;
+    technique_name: string;
+    evidence: string;
+  }[];
   recommended_actions: AIRecommendedAction[];
+  confidence: number;
+  confidence_score?: number;
+  trust_score_invariant: {
+    ground_truth_score: number;
+    authority: 'DETERMINISTIC_TRUST_ENGINE';
+    gemini_authority: 'READ_ONLY_ADVISORY';
+    can_alter_trust_score: false;
+    message: string;
+  };
   generated_at: string;
   model_used: string;
 }

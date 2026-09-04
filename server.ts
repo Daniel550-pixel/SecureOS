@@ -25,6 +25,175 @@ app.use(express.json({ limit: '10mb' }));
 let currentScenarioId = 'supply_chain_tamper';
 let activeState: SystemState = JSON.parse(JSON.stringify(SCENARIOS.find(s => s.id === currentScenarioId)!.state));
 
+// Helper: Build structured AI analysis (used for baseline state, scenario changes, or fallback when API key is pending)
+function buildDeterministicAnalysis(
+  deviations: ReturnType<typeof compareAgainstBaseline>,
+  trustScoreResult: ReturnType<typeof calculateTrustScore>,
+  events: NormalizedEvent[] = []
+): AIIntegrityAnalysis {
+  const isCritical = trustScoreResult.current_score < 50;
+  const isElevated = trustScoreResult.current_score < 80;
+  const isClean = deviations.length === 0;
+
+  const assessmentStr = isClean
+    ? 'HEALTHY: All host baseline integrity checks verified nominal'
+    : isCritical
+    ? 'CRITICAL COMPROMISE: Defense evasion, unauthorized execution & potential C2 beaconing'
+    : isElevated
+    ? 'HIGH RISK: Uncatalogued services, missing security controls, and suspicious binary execution'
+    : 'ELEVATED RISK: Minor integrity deviations detected against sovereign golden baseline';
+
+  const explanationStr = isClean
+    ? 'All host running processes match digital signature white-lists. Crucial security daemons (WinDefend, EventLog, CryptSvc) are running uninterrupted with nominal hashes. No suspicious network sockets or file integrity anomalies detected.'
+    : `Deterministic baseline verification identified ${deviations.length} baseline violations resulting in an authoritative Trust Score of ${trustScoreResult.current_score}%. Telemetry correlation indicates a causal sequence where security controls were impaired (e.g. ${deviations.map(d => d.entity).slice(0, 2).join(', ')}), followed by process execution from non-standard directories and anomalous egress sockets.`;
+
+  const correlatedEvents = isClean
+    ? [
+        {
+          event_id: 'CORR-EV-01',
+          stage: 'Nominal Baseline Verification',
+          title: 'All Core Subsystems Signed and Validated',
+          description: 'Host telemetry confirms zero unauthorized processes, active defender services, and clean socket mappings.',
+          involved_entities: ['ntoskrnl.exe', 'services.exe', 'WinDefend'],
+          mitre_tactic: 'Discovery',
+          mitre_technique: 'T1082',
+          threat_likelihood: 'low' as const,
+          evidence: 'Verified against UAE Sovereign Golden Baseline'
+        }
+      ]
+    : deviations.map((d, idx) => {
+        let tactic = 'Defense Evasion';
+        let technique = 'T1562.001';
+        let stage = 'Subsystem Integrity Deviation';
+
+        if (d.category.includes('proc')) {
+          tactic = 'Execution';
+          technique = 'T1204.002';
+          stage = 'Unauthorized Binary Execution';
+        } else if (d.category.includes('net')) {
+          tactic = 'Command and Control';
+          technique = 'T1071.001';
+          stage = 'Anomalous Egress Communication';
+        } else if (d.category.includes('sec')) {
+          tactic = 'Defense Evasion';
+          technique = 'T1562.001';
+          stage = 'Security Control Impairment';
+        } else if (d.category.includes('fim')) {
+          tactic = 'Persistence';
+          technique = 'T1546';
+          stage = 'System Configuration Tampering';
+        }
+
+        return {
+          event_id: `CORR-DEV-${idx + 1}`,
+          stage,
+          title: d.title || `${d.category} Anomaly`,
+          description: d.description,
+          involved_entities: [d.entity],
+          mitre_tactic: tactic,
+          mitre_technique: technique,
+          threat_likelihood: (d.severity === 'critical' ? 'critical' : d.severity === 'high' ? 'high' : 'moderate') as any,
+          evidence: `Expected: "${d.baseline_expected}" vs Observed: "${d.observed_actual}"`
+        };
+      });
+
+  const recommendedActions = isClean
+    ? [
+        {
+          id: 'ACT-01',
+          title: 'Maintain Real-Time Telemetry Streaming',
+          action: 'Maintain Real-Time Telemetry Streaming',
+          type: 'hardening' as const,
+          priority: 'low' as const,
+          urgency: 'LOW' as const,
+          command_snippet: 'Get-Service AIOS-Telemetry | Select-Object Status, StartType',
+          command: 'Get-Service AIOS-Telemetry | Select-Object Status, StartType',
+          explanation: 'Ensure background EDR agent continues heartbeat stream to the Digital Integrity Monitor.',
+          rationale: 'Ensure continuous monitoring coverage.'
+        }
+      ]
+    : [
+        {
+          id: 'ACT-01',
+          title: 'Isolate Host from Sovereign Network Fabric',
+          action: 'Isolate Host from Sovereign Network Fabric',
+          type: 'containment' as const,
+          priority: 'urgent' as const,
+          urgency: 'IMMEDIATE' as const,
+          command_snippet: 'Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True; Block-InboundOutbound -PreserveTelemetry',
+          command: 'Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True; Block-InboundOutbound -PreserveTelemetry',
+          explanation: 'Sever lateral movement and C2 beaconing while preserving telemetry link for active incident response.',
+          rationale: 'Prevent adversary lateral propagation across adjacent nodes.'
+        },
+        {
+          id: 'ACT-02',
+          title: 'Restore Terminated Defender and EventLog Daemons',
+          action: 'Restore Terminated Defender and EventLog Daemons',
+          type: 'remediation' as const,
+          priority: 'high' as const,
+          urgency: 'HIGH' as const,
+          command_snippet: 'Set-Service -Name WinDefend -StartupType Automatic; Start-Service WinDefend',
+          command: 'Set-Service -Name WinDefend -StartupType Automatic; Start-Service WinDefend',
+          explanation: 'Re-enable real-time kernel telemetry, memory scanning, and AMSI script inspection.',
+          rationale: 'Security daemon must be active to neutralize residual threats.'
+        },
+        {
+          id: 'ACT-03',
+          title: 'Terminate Unsigned / Deviant Processes & Quarantine Artifacts',
+          action: 'Terminate Unsigned / Deviant Processes & Quarantine Artifacts',
+          type: 'containment' as const,
+          priority: 'high' as const,
+          urgency: 'HIGH' as const,
+          command_snippet: deviations.some(d => d.category.includes('proc'))
+            ? `Stop-Process -Name "${deviations.find(d => d.category.includes('proc'))?.entity || 'update_sync.exe'}" -Force`
+            : 'Get-Process | Where-Object { -not $_.Path } | Stop-Process -Force',
+          command: deviations.some(d => d.category.includes('proc'))
+            ? `Stop-Process -Name "${deviations.find(d => d.category.includes('proc'))?.entity || 'update_sync.exe'}" -Force`
+            : 'Get-Process | Where-Object { -not $_.Path } | Stop-Process -Force',
+          explanation: 'Halt malicious execution threads and preserve disk image for forensic review.',
+          rationale: 'Neutralize active adversary execution.'
+        }
+      ];
+
+  return {
+    assessment: assessmentStr,
+    risk_level: (trustScoreResult.risk_classification || 'LOW') as any,
+    explanation: explanationStr,
+    detailed_explanation: explanationStr,
+    summary_headline: assessmentStr,
+    threat_hypothesis: assessmentStr,
+    attack_narrative: explanationStr,
+    correlated_events: correlatedEvents,
+    correlated_chain: correlatedEvents,
+    correlated_activity_chain: correlatedEvents,
+    mitre_mappings: correlatedEvents.map(ev => ({
+      technique_id: ev.mitre_technique || 'T1059',
+      tactic: ev.mitre_tactic || 'Execution',
+      technique_name: ev.title,
+      evidence: ev.evidence || ev.description
+    })),
+    recommended_actions: recommendedActions,
+    confidence: isClean ? 0.99 : 0.92,
+    confidence_score: isClean ? 0.99 : 0.92,
+    trust_score_invariant: {
+      ground_truth_score: trustScoreResult.current_score,
+      authority: 'DETERMINISTIC_TRUST_ENGINE',
+      gemini_authority: 'READ_ONLY_ADVISORY',
+      can_alter_trust_score: false,
+      message: 'CRITICAL INVARIANT: Gemini has zero authority to directly alter the Trust Score. Trust Score is computed authoritatively by the deterministic Trust Engine based on mathematical baseline verification.'
+    },
+    generated_at: new Date().toISOString(),
+    model_used: 'Deterministic Integrity Reasoning Engine (Ground Truth Fallback)'
+  };
+}
+
+// Active AI analysis state
+let currentAiAnalysis: AIIntegrityAnalysis = buildDeterministicAnalysis(
+  compareAgainstBaseline(activeState, DEFAULT_BASELINE),
+  calculateTrustScore(compareAgainstBaseline(activeState, DEFAULT_BASELINE)),
+  activeState.recent_events
+);
+
 // Initialize Gemini Client safely
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -56,13 +225,19 @@ app.get('/api/health', (req, res) => {
 app.get('/api/state', (req, res) => {
   const deviations = compareAgainstBaseline(activeState, DEFAULT_BASELINE);
   const trustScoreResult = calculateTrustScore(deviations);
+  const scenario = SCENARIOS.find(s => s.id === currentScenarioId) || SCENARIOS[0];
 
   res.json({
     scenario_id: currentScenarioId,
+    scenario,
     state: activeState,
     baseline: DEFAULT_BASELINE,
     deviations,
     trust_score: trustScoreResult,
+    trustScore: trustScoreResult,
+    ai_analysis: currentAiAnalysis,
+    aiAnalysis: currentAiAnalysis,
+    analysis: currentAiAnalysis,
     timestamp: new Date().toISOString()
   });
 });
@@ -79,12 +254,21 @@ app.post('/api/scenario/:id', (req, res) => {
 
   const deviations = compareAgainstBaseline(activeState, DEFAULT_BASELINE);
   const trustScore = calculateTrustScore(deviations);
+  currentAiAnalysis = buildDeterministicAnalysis(deviations, trustScore, activeState.recent_events);
 
   res.json({
     message: `Scenario '${scenario.name}' activated`,
+    scenario,
     scenario_id: currentScenarioId,
+    state: activeState,
+    baseline: DEFAULT_BASELINE,
+    deviations,
     deviations_count: deviations.length,
-    trust_score: trustScore
+    trust_score: trustScore,
+    trustScore,
+    ai_analysis: currentAiAnalysis,
+    aiAnalysis: currentAiAnalysis,
+    analysis: currentAiAnalysis
   });
 });
 
@@ -137,11 +321,19 @@ app.post('/api/telemetry/ingest', (req, res) => {
 
     const deviations = compareAgainstBaseline(activeState, DEFAULT_BASELINE);
     const trustScore = calculateTrustScore(deviations);
+    currentAiAnalysis = buildDeterministicAnalysis(deviations, trustScore, activeState.recent_events);
 
     res.json({
       success: true,
       event_id: normalizedEvent.event_id,
-      trust_score: trustScore
+      state: activeState,
+      baseline: DEFAULT_BASELINE,
+      deviations,
+      trust_score: trustScore,
+      trustScore,
+      ai_analysis: currentAiAnalysis,
+      aiAnalysis: currentAiAnalysis,
+      analysis: currentAiAnalysis
     });
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Invalid ingestion payload' });
@@ -156,24 +348,21 @@ app.post('/api/actions/execute', (req, res) => {
     const cleanScenario = SCENARIOS.find(s => s.id === 'clean_baseline')!;
     currentScenarioId = 'clean_baseline';
     activeState = JSON.parse(JSON.stringify(cleanScenario.state));
-    return res.json({
-      success: true,
-      message: 'System state successfully restored to Golden Baseline Catalog',
-      trust_score: calculateTrustScore(compareAgainstBaseline(activeState, DEFAULT_BASELINE))
-    });
-  }
-
-  if (action_type === 'kill_process') {
+  } else if (action_type === 'kill_process' || action_type === 'terminate_process') {
     activeState.processes = activeState.processes.filter(p => !p.name.includes(target_entity) && String(p.pid) !== target_entity);
-  } else if (action_type === 'restart_service') {
+  } else if (action_type === 'restart_service' || action_type === 'restore_service') {
     const svc = activeState.services.find(s => s.name === target_entity || s.display_name === target_entity);
     if (svc) {
       svc.status = 'Running';
     }
-  } else if (action_type === 'block_network') {
-    activeState.network_connections = activeState.network_connections.filter(c => c.remote_ip !== target_entity && !target_entity.includes(c.remote_ip));
-  } else if (action_type === 'restore_file') {
-    const fim = activeState.fim_files.find(f => f.path === target_entity);
+  } else if (action_type === 'block_network' || action_type === 'isolate_host') {
+    if (target_entity) {
+      activeState.network_connections = activeState.network_connections.filter(c => c.remote_ip !== target_entity && !target_entity.includes(c.remote_ip));
+    } else {
+      activeState.network_connections = [];
+    }
+  } else if (action_type === 'restore_file' || action_type === 'restore_fim') {
+    const fim = activeState.fim_files.find(f => f.path.includes(target_entity));
     if (fim) {
       fim.current_hash = fim.expected_hash;
       fim.is_modified = false;
@@ -182,99 +371,112 @@ app.post('/api/actions/execute', (req, res) => {
 
   const deviations = compareAgainstBaseline(activeState, DEFAULT_BASELINE);
   const trustScore = calculateTrustScore(deviations);
+  currentAiAnalysis = buildDeterministicAnalysis(deviations, trustScore, activeState.recent_events);
 
   res.json({
     success: true,
-    message: `Action '${action_type}' applied on '${target_entity}'`,
-    trust_score: trustScore
+    message: `Action '${action_type}' applied on '${target_entity || 'node'}'`,
+    action: { name: `${action_type} on ${target_entity || 'node'}` },
+    state: activeState,
+    baseline: DEFAULT_BASELINE,
+    deviations,
+    trust_score: trustScore,
+    trustScore,
+    ai_analysis: currentAiAnalysis,
+    aiAnalysis: currentAiAnalysis,
+    analysis: currentAiAnalysis
   });
 });
 
 // 5. Module 05 — AI Analysis (Gemini Reasoning)
-// Receives Evidence + Deterministic Trust Score + Deviations -> Produces Structured Attack Chain Correlation & Guidance
+// Receives:
+//  - Deterministic Trust Score (computed authoritatively by Trust Engine)
+//  - List of detected deviations (baseline violations)
+//  - Supporting event objects (recent normalized telemetry)
+// Crucially, Gemini DOES NOT have the authority to alter the Trust Score.
 app.post('/api/gemini/analyze', async (req, res) => {
   try {
     const deviations = compareAgainstBaseline(activeState, DEFAULT_BASELINE);
     const trustScoreResult = calculateTrustScore(deviations);
-    const clientPrompt = req.body.custom_query || 'Analyze current integrity deviations, correlate attack progression, and recommend containment steps.';
+    const supportingEvents = (req.body.events && Array.isArray(req.body.events)) 
+      ? req.body.events 
+      : activeState.recent_events.slice(0, 10);
+    const clientPrompt = req.body.custom_query || 'Explain the likely relationship between the detected baseline deviations and supporting telemetry events, provide an overall risk assessment, and recommend response actions.';
 
     const ai = getGeminiClient();
 
     if (!ai) {
-      // High quality deterministic fallback when API key is pending
-      const isCritical = trustScoreResult.current_score < 50;
-      const isElevated = trustScoreResult.current_score < 80;
-
-      const fallbackAnalysis: AIIntegrityAnalysis = {
-        assessment: isCritical ? 'critical_compromise' : (isElevated ? 'high_risk' : 'elevated_risk'),
-        summary_headline: isCritical
-          ? 'Multistage Defense Evasion and Execution Chain Correlated'
-          : 'Isolated Digital Integrity Deviations Detected Across Host Subsystems',
-        detailed_explanation: `Deterministic security engine calculated an Integrity Trust Score of ${trustScoreResult.current_score}% with ${deviations.length} distinct baseline violations. The observed deviations demonstrate tampering with security services and unauthorized binary or network activity.`,
-        confidence: 0.92,
-        attack_narrative: `Initial deviation originated from process execution violating golden whitelists. Subsequent subsystem telemetry indicates defense evasion (status modifications to security daemons) and outbound non-standard socket handshakes.`,
-        correlated_chain: deviations.map((d, idx) => ({
-          tactic: d.category.replace(/_/g, ' ').toUpperCase(),
-          technique: `TECH-${1000 + idx}`,
-          description: d.description,
-          involved_entities: [d.entity],
-          threat_likelihood: d.severity === 'critical' ? 'critical' : 'high'
-        })),
-        recommended_actions: [
-          {
-            id: 'ACT-01',
-            title: 'Isolate Host from UAE Sovereign Network Fabric',
-            type: 'containment',
-            priority: 'urgent',
-            command_snippet: 'Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True; Block-InboundOutbound',
-            explanation: 'Sever lateral movement vectors while preserving forensic telemetry connection to AIOS monitor.'
-          },
-          {
-            id: 'ACT-02',
-            title: 'Restore Defender Subsystem & Quarantine Unsigned Artifacts',
-            type: 'remediation',
-            priority: 'high',
-            command_snippet: 'Start-Service WinDefend; Remove-Item -Path $SuspiciousPath -Force',
-            explanation: 'Re-enable real-time telemetry inspection and remove staging artifacts.'
-          },
-          {
-            id: 'ACT-03',
-            title: 'Audit Parent Process Tree and Memory Dumps',
-            type: 'investigation',
-            priority: 'medium',
-            command_snippet: 'Get-Process | Select-Object Id, Name, Path, Company | Export-Clixml forensic.xml',
-            explanation: 'Capture volatile process memory before host reboot or restoration to Golden Baseline.'
-          }
-        ],
-        generated_at: new Date().toISOString(),
-        model_used: 'Deterministic Reasoning Engine (Fallback Mode)'
-      };
-
-      return res.json(fallbackAnalysis);
+      const fallback = buildDeterministicAnalysis(deviations, trustScoreResult, supportingEvents);
+      currentAiAnalysis = fallback;
+      return res.json({
+        success: true,
+        analysis: fallback,
+        aiAnalysis: fallback,
+        ...fallback
+      });
     }
 
-    const systemInstruction = `You are the AI Reasoning Engine for the Digital Integrity / Trust Monitor (UAE Sovereign AIOS).
-CRITICAL INVARIANT:
-- The Deterministic Trust Engine has already calculated the GROUND TRUTH Trust Score: ${trustScoreResult.current_score} / 100.0 (${trustScoreResult.status_label}).
-- You MUST NOT alter, override, or invent your own score.
-- Your task is to provide structured intelligence: explain the likely relationship between these events, identify the threat narrative / MITRE ATT&CK progression, estimate confidence, and output actionable containment commands.`;
+    const systemInstruction = `You are the AI Analysis & Reasoning Module for the Digital Integrity Monitor prototype (UAE Sovereign AIOS).
 
-    const promptPayload = `CURRENT DETERMINISTIC SECURITY STATE:
-- Host: ${activeState.hostname} (${activeState.os_version})
-- Trust Score: ${trustScoreResult.current_score}%
-- Risk Classification: ${trustScoreResult.risk_classification}
-- Total Deviations: ${deviations.length}
+CRITICAL ARCHITECTURAL BOUNDARY & INVARIANT:
+- The deterministic Trust Engine is the SOLE authority for calculating the ground-truth Trust Score: ${trustScoreResult.current_score}% (${trustScoreResult.status_label}).
+- You DO NOT have the authority to alter, override, recalculate, or modify the trust score under any circumstances.
+- Your role is strictly analytical and advisory:
+  1. Receive the deterministic Trust Score, detected deviations, and supporting event objects.
+  2. Explain the likely relationship and causal connections between these events and deviations.
+  3. Provide an overall risk assessment.
+  4. Output your analysis in a structured JSON format containing:
+     - "assessment": string summarizing the risk classification and rationale
+     - "explanation": string explaining the likely relationship between the events and deviations
+     - "correlated_events": array of correlated events showing the progression and evidence
+     - "recommended_actions": array of containment and remediation actions with concrete commands
+     - "confidence": number between 0.0 and 1.0 representing your confidence in this hypothesis.`;
 
-DEVIATIONS DETECTED:
-${JSON.stringify(deviations, null, 2)}
+    const promptPayload = `INPUT DATA FOR INTEGRITY REASONING:
 
-RECENT NORMALIZED TELEMETRY:
-${JSON.stringify(activeState.recent_events.slice(0, 8), null, 2)}
+[DETERMINISTIC TRUST SCORE - AUTHORITATIVE GROUND TRUTH]
+- Numerical Score: ${trustScoreResult.current_score} / 100.0
+- Classification: ${trustScoreResult.risk_classification}
+- Status Label: ${trustScoreResult.status_label}
+- Total Mathematical Deductions: ${trustScoreResult.total_deductions} pts
+- Deduction Rules Triggered:
+${JSON.stringify(trustScoreResult.deduction_breakdown.map(d => ({
+  rule: d.rule_id,
+  entity: d.entity,
+  penalty: d.effective_deduction,
+  reason: d.reason
+})), null, 2)}
+(REMINDER: You cannot change this score. It is fixed ground truth computed by the Trust Engine.)
 
-USER QUERY:
+[DETECTED DEVIATIONS (${deviations.length} baseline violations)]
+${JSON.stringify(deviations.map(d => ({
+  id: d.deviation_id,
+  category: d.category,
+  severity: d.severity,
+  entity: d.entity,
+  expected: d.baseline_expected,
+  observed: d.observed_actual,
+  description: d.description,
+  weight: d.deduction_weight
+})), null, 2)}
+
+[SUPPORTING EVENT OBJECTS (${supportingEvents.length} telemetry records)]
+${JSON.stringify(supportingEvents.map(e => ({
+  event_id: e.event_id,
+  timestamp: e.timestamp,
+  source: e.source,
+  type: e.type,
+  severity: e.severity,
+  entity: e.entity,
+  evidence: e.evidence,
+  mitre_tactic: e.mitre_tactic,
+  mitre_technique: e.mitre_technique
+})), null, 2)}
+
+[ANALYST INQUIRY]
 ${clientPrompt}
 
-Provide a structured, rigorous JSON security assessment.`;
+Explain the likely relationship between these events, provide an overall risk assessment, correlate the events into a chain, recommend actionable containment steps, and output valid JSON conforming strictly to the requested schema.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
@@ -287,84 +489,142 @@ Provide a structured, rigorous JSON security assessment.`;
           properties: {
             assessment: {
               type: Type.STRING,
-              description: "Overall classification: 'healthy', 'elevated_risk', 'high_risk', or 'critical_compromise'"
+              description: "Risk assessment summary and classification (e.g., 'CRITICAL COMPROMISE: Defense Evasion & C2 Beaconing' or 'HIGH RISK: Unauthorized Execution & Service Tampering')"
             },
-            summary_headline: {
+            explanation: {
               type: Type.STRING,
-              description: "Short, punchy executive headline of the findings"
+              description: "Detailed explanation of the likely relationship and causal link between the detected baseline deviations and supporting event objects"
             },
-            detailed_explanation: {
-              type: Type.STRING,
-              description: "Comprehensive evidence-backed analysis explaining event correlation"
-            },
-            confidence: {
-              type: Type.NUMBER,
-              description: "Confidence in threat hypothesis between 0.0 and 1.0"
-            },
-            attack_narrative: {
-              type: Type.STRING,
-              description: "Step-by-step kill chain narrative reconstructing adversary actions"
-            },
-            correlated_chain: {
+            correlated_events: {
               type: Type.ARRAY,
+              description: "Correlated events mapping the relationship between events, entities, and MITRE tactics",
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  tactic: { type: Type.STRING },
-                  technique: { type: Type.STRING },
-                  description: { type: Type.STRING },
+                  event_id: { type: Type.STRING, description: "Unique identifier for this correlated stage or referenced event" },
+                  stage: { type: Type.STRING, description: "Kill chain or correlation stage (e.g., 'Initial Compromise', 'Defense Evasion', 'Persistence', 'C2 Outbound')" },
+                  title: { type: Type.STRING, description: "Concise title of the correlated event" },
+                  description: { type: Type.STRING, description: "Explanation of how this event relates to the detected deviations" },
                   involved_entities: {
                     type: Type.ARRAY,
-                    items: { type: Type.STRING }
+                    items: { type: Type.STRING },
+                    description: "Processes, files, services, or network addresses involved"
                   },
-                  threat_likelihood: {
-                    type: Type.STRING,
-                    description: "'low', 'moderate', 'high', or 'critical'"
-                  }
+                  mitre_tactic: { type: Type.STRING, description: "MITRE ATT&CK tactic" },
+                  mitre_technique: { type: Type.STRING, description: "MITRE ATT&CK technique (e.g. T1059, T1562.001)" },
+                  threat_likelihood: { type: Type.STRING, description: "'critical', 'high', 'moderate', or 'low'" },
+                  evidence: { type: Type.STRING, description: "Telemetry evidence supporting this correlation" }
                 },
-                required: ["tactic", "technique", "description", "involved_entities", "threat_likelihood"]
+                required: ["stage", "title", "description", "involved_entities", "threat_likelihood"]
               }
             },
             recommended_actions: {
               type: Type.ARRAY,
+              description: "Actionable response, containment, and remediation steps",
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  id: { type: Type.STRING },
-                  title: { type: Type.STRING },
+                  id: { type: Type.STRING, description: "Action identifier (e.g. 'ACT-01')" },
+                  title: { type: Type.STRING, description: "Action title" },
                   type: { type: Type.STRING, description: "'containment', 'investigation', 'remediation', or 'hardening'" },
                   priority: { type: Type.STRING, description: "'urgent', 'high', 'medium', or 'low'" },
-                  command_snippet: { type: Type.STRING },
-                  explanation: { type: Type.STRING }
+                  command_snippet: { type: Type.STRING, description: "Executable PowerShell or shell command snippet" },
+                  explanation: { type: Type.STRING, description: "Technical justification and purpose of the action" }
                 },
                 required: ["id", "title", "type", "priority", "explanation"]
               }
+            },
+            confidence: {
+              type: Type.NUMBER,
+              description: "Analytical confidence in this assessment between 0.0 and 1.0"
             }
           },
-          required: [
-            "assessment",
-            "summary_headline",
-            "detailed_explanation",
-            "confidence",
-            "attack_narrative",
-            "correlated_chain",
-            "recommended_actions"
-          ]
+          required: ["assessment", "explanation", "correlated_events", "recommended_actions", "confidence"]
         }
       }
     });
 
     const parsed = JSON.parse(response.text || '{}');
+
+    // Normalize correlated events
+    const correlatedEvents = (parsed.correlated_events || []).map((ev: any, idx: number) => ({
+      event_id: ev.event_id || `CORR-EV-${idx + 1}`,
+      stage: ev.stage || `Stage ${idx + 1}`,
+      title: ev.title || 'Correlated Security Event',
+      description: ev.description || '',
+      involved_entities: Array.isArray(ev.involved_entities) ? ev.involved_entities : [String(ev.involved_entities || '')],
+      mitre_tactic: ev.mitre_tactic || 'Execution',
+      mitre_technique: ev.mitre_technique || 'T1059',
+      threat_likelihood: ev.threat_likelihood || 'high',
+      evidence: ev.evidence || ev.description || 'Observed via live host telemetry'
+    }));
+
+    // Normalize recommended actions
+    const recommendedActions = (parsed.recommended_actions || []).map((act: any, idx: number) => ({
+      id: act.id || `ACT-0${idx + 1}`,
+      title: act.title || 'Recommended Mitigation',
+      action: act.title || 'Recommended Mitigation',
+      type: act.type || 'containment',
+      priority: act.priority || 'high',
+      urgency: (act.priority === 'urgent' ? 'IMMEDIATE' : act.priority === 'high' ? 'HIGH' : 'MEDIUM') as any,
+      command_snippet: act.command_snippet || '',
+      command: act.command_snippet || '',
+      explanation: act.explanation || '',
+      rationale: act.explanation || ''
+    }));
+
     const result: AIIntegrityAnalysis = {
-      ...parsed,
+      assessment: parsed.assessment || trustScoreResult.status_label,
+      risk_level: (trustScoreResult.risk_classification || 'LOW') as any,
+      explanation: parsed.explanation || '',
+      detailed_explanation: parsed.explanation || '',
+      summary_headline: parsed.assessment || `${trustScoreResult.status_label} - Integrity Anomaly Correlation`,
+      threat_hypothesis: parsed.assessment || 'Multistage Telemetry Correlation Assessment',
+      attack_narrative: parsed.explanation || '',
+      correlated_events: correlatedEvents,
+      correlated_chain: correlatedEvents,
+      correlated_activity_chain: correlatedEvents,
+      mitre_mappings: correlatedEvents.map((ev: any) => ({
+        technique_id: ev.mitre_technique || 'T1059',
+        tactic: ev.mitre_tactic || 'Execution',
+        technique_name: ev.title,
+        evidence: ev.evidence || ev.description
+      })),
+      recommended_actions: recommendedActions,
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.94,
+      confidence_score: typeof parsed.confidence === 'number' ? parsed.confidence : 0.94,
+      trust_score_invariant: {
+        ground_truth_score: trustScoreResult.current_score,
+        authority: 'DETERMINISTIC_TRUST_ENGINE',
+        gemini_authority: 'READ_ONLY_ADVISORY',
+        can_alter_trust_score: false,
+        message: 'Crucial Architectural Invariant: Gemini has zero authority to directly alter the Trust Score. Trust Score is computed authoritatively by the deterministic Trust Engine based on mathematical baseline verification.'
+      },
       generated_at: new Date().toISOString(),
       model_used: 'gemini-3.8-flash'
     };
 
-    res.json(result);
+    currentAiAnalysis = result;
+
+    res.json({
+      success: true,
+      analysis: result,
+      aiAnalysis: result,
+      ...result
+    });
   } catch (err: any) {
     console.error('Gemini Analysis Error:', err);
-    res.status(500).json({ error: err.message || 'AI Reasoning invocation failed' });
+    // Fallback on error to ensure uninterrupted application availability
+    const deviations = compareAgainstBaseline(activeState, DEFAULT_BASELINE);
+    const trustScoreResult = calculateTrustScore(deviations);
+    const fallback = buildDeterministicAnalysis(deviations, trustScoreResult, activeState.recent_events);
+    currentAiAnalysis = fallback;
+    res.json({
+      success: true,
+      analysis: fallback,
+      aiAnalysis: fallback,
+      ...fallback
+    });
   }
 });
 

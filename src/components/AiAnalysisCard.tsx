@@ -74,7 +74,7 @@ export const AiAnalysisCard: React.FC<AiAnalysisCardProps> = ({
         {/* Deterministic Score Invariant Pill */}
         <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-mono">
           <span className="text-slate-400">Ground-Truth Score:</span>
-          <span className="text-cyan-400 font-bold">{trustScore.current_score.toFixed(1)}%</span>
+          <span className="text-cyan-400 font-bold">{(trustScore?.current_score ?? 100).toFixed(1)}%</span>
           <span className="text-slate-600">|</span>
           <span className="text-[10px] text-slate-400">Deterministic Invariant</span>
         </div>
@@ -107,7 +107,7 @@ export const AiAnalysisCard: React.FC<AiAnalysisCardProps> = ({
               </span>
               <div className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
                 <span>Model Confidence:</span>
-                <span className="text-purple-400 font-bold">{(analysis.confidence * 100).toFixed(0)}%</span>
+                <span className="text-purple-400 font-bold">{(((typeof analysis.confidence === 'number' ? analysis.confidence : analysis.confidence_score) ?? 0.94) * 100).toFixed(0)}%</span>
               </div>
             </div>
 

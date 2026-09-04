@@ -19,7 +19,7 @@ export const TrustGaugeCard: React.FC<TrustGaugeCardProps> = ({
   onRevertBaseline,
   isAiAnalyzing
 }) => {
-  const score = trustScore.current_score;
+  const score = trustScore?.current_score ?? 100;
   const isHealthy = score >= 90.0;
   const isElevated = score >= 75.0 && score < 90.0;
   const isHigh = score >= 50.0 && score < 75.0;

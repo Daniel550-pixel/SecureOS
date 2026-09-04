@@ -62,16 +62,16 @@ export const TrustScoreAuditTable: React.FC<TrustScoreAuditTableProps> = ({ trus
             </tr>
 
             {/* Deductions */}
-            {trustScore.deduction_breakdown.map((item, idx) => (
+            {(trustScore?.deduction_breakdown || []).map((item, idx) => (
               <tr key={idx} className="hover:bg-slate-950/40 text-slate-300">
                 <td className="p-3 text-cyan-400">{item.rule_id}</td>
                 <td className="p-3 font-semibold text-slate-200">{item.title}</td>
                 <td className="p-3 text-slate-400">{item.entity}</td>
                 <td className="p-3 text-[10px] text-slate-400">{item.mitre_reference || 'T1059'}</td>
-                <td className="p-3 text-right">-{item.raw_penalty.toFixed(1)}</td>
-                <td className="p-3 text-right text-slate-400">{item.confidence_multiplier.toFixed(2)}x</td>
+                <td className="p-3 text-right">-{(item.raw_penalty ?? 0).toFixed(1)}</td>
+                <td className="p-3 text-right text-slate-400">{(item.confidence_multiplier ?? 1).toFixed(2)}x</td>
                 <td className="p-3 text-right text-rose-400 font-bold">
-                  -{item.effective_deduction.toFixed(1)}
+                  -{(item.effective_deduction ?? 0).toFixed(1)}
                 </td>
               </tr>
             ))}
@@ -82,7 +82,7 @@ export const TrustScoreAuditTable: React.FC<TrustScoreAuditTableProps> = ({ trus
                 Final Deterministic Trust Score:
               </td>
               <td className="p-3 text-right text-cyan-400 font-mono text-base">
-                {trustScore.current_score.toFixed(1)}%
+                {(trustScore?.current_score ?? 100).toFixed(1)}%
               </td>
             </tr>
           </tbody>

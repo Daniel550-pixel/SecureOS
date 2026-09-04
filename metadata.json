@@ -1,6 +1,6 @@
 {
-  "name": "Digital Integrity Monitor",
-  "description": "Architectural prototype for digital integrity and trust monitoring with deterministic scoring, baseline comparison, telemetry normalization, and AI-assisted security reasoning.",
+  "name": "SecureOS",
+  "description": "Next-generation security operating environment and digital integrity monitor with deterministic trust core, AI-powered reasoning, interactive topology, and telemetry analysis.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
