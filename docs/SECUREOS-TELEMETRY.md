@@ -1,70 +1,66 @@
 # SecureOS Telemetry Pipeline
 
-## Runtime path
+## Runtime contract
 
 ```text
 Windows Host
-    |
-    v
-PowerShell Agent
-    |
-    | HTTPS/HTTP POST /api/telemetry/ingest
-    v
-Telemetry Normalizer
-    |
-    +--> activeState.recent_events
-    |
-    +--> Persistent Event Ledger (JSONL)
-    |       |
-    |       +--> SHA-256 record hash
-    |       +--> previous_hash chain
-    |       +--> sequence number
-    |
-    v
-Deterministic Baseline Comparison
-    |
-    v
-Deterministic Trust Engine
-    |
-    +--> Trust Score
-    +--> Risk Classification
-    +--> Deviations
-    |
-    v
-AI Analysis (advisory/read-only)
-    |
-    v
-SecureOS UI
+  -> PowerShell Collector
+  -> POST /api/telemetry/ingest
+  -> Event Normalization
+  -> Persistent Hash-Chained Ledger
+  -> Deterministic Baseline Comparison
+  -> Deterministic Trust Engine
+  -> AI Advisory Layer
+  -> SecureOS UI
 ```
 
-## Collector boundary
+## Authority boundary
 
-The PowerShell agent is a telemetry collector. It observes processes, critical services, established TCP connections, and the Windows hosts file hash. It does not execute remediation and cannot change the Trust Score.
+The PowerShell agent is a collector. It does not execute remediation and it does not calculate or modify the Trust Score.
 
-## Persistent ledger
+The deterministic Trust Engine is authoritative. Gemini is read-only and receives ground-truth score/deviation context for correlation and explanation.
 
-`src/engine/eventLedger.ts` stores append-only JSONL records under `data/event-ledger.jsonl` at runtime. Each record contains:
+## High-signal collection
 
-- sequence
-- recorded timestamp
-- record type
-- host ID
-- telemetry or trust snapshot data
+The collector intentionally avoids writing every process and connection to the ledger on every interval. It reports:
+
+- unsigned or non-standard process executions
+- changes to critical service state
+- connections to explicitly suspicious ports
+- changes to the Windows hosts-file SHA-256 observation
+
+This reduces ledger amplification while preserving security-relevant evidence.
+
+## Ledger integrity
+
+Each record contains:
+
+- monotonically increasing sequence
+- UTC recording timestamp
 - previous record hash
 - SHA-256 record hash
+- record type
+- host identity
+- telemetry/trust/lifecycle metadata
 
-The chain can be checked through:
+`GET /api/evidence/verify` verifies the complete hash chain from the genesis value.
 
-- `GET /api/ledger`
-- `GET /api/evidence/verify`
-- `GET /api/trust/history`
+## API
 
-The ledger is tamper-evident, not a substitute for a signed remote audit log. Runtime `data/` should be excluded from source control for production deployments.
+- `GET /api/health` — service health and ledger status
+- `GET /api/state` — current deterministic state
+- `POST /api/telemetry/ingest` — normalized telemetry ingestion
+- `GET /api/ledger?limit=100` — recent ledger records
+- `GET /api/trust/history?limit=200` — historical Trust Score snapshots
+- `GET /api/evidence/verify` — hash-chain verification
+- `GET /api/powershell-agent/script` — generated collector script
 
-## Trust authority
+## Operating modes
 
-The Trust Engine remains authoritative. Gemini receives the deterministic score, deviations, and supporting telemetry as evidence. Gemini cannot alter or recalculate the score.
+**Simulation mode:** predefined scenario fixtures provide deterministic demonstrations.
 
-## Simulation vs live telemetry
+**Live mode:** the PowerShell collector sends observations from a Windows host. Live telemetry must remain visibly distinguishable from simulation fixtures in any production dashboard.
 
-Scenario fixtures remain available for demonstrations. Live PowerShell telemetry is distinguishable by `source: powershell_agent` and should be treated as observed endpoint data. Simulation fixtures are not cryptographic proof.
+## CI verification
+
+`.github/workflows/secureos-ci.yml` runs TypeScript verification and the production build on pushes and pull requests targeting `main`.
